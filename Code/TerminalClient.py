@@ -11,6 +11,14 @@ from Modules.SelectorData import SelectorData
 # run python client.py HOSTNAME PORTNAME
 
 def client_user(server_socket, username):
+    # Send a message to the database, confirming Login
+    try:
+        request = DataObject(request=Request.CONFIRM_LOGIN, user=username)
+        server_socket.sendall(request.serialize())
+    except Exception as e:
+        print(f"Error in Client when sending Login to database:", e)
+        server_socket.close()
+        return
     data_buffer = b""
     logged_in = False
     while not logged_in:
