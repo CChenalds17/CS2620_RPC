@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+package chat;
+
+// --- Common Enums and Messages ---
+
+// Status values correspond to your custom Status flags.
+enum Status {
+  PENDING = 0;
+  SUCCESS = 1;
+  MATCH = 2;
+  NO_MATCH = 3;
+  ERROR = 4;
+}
+
+// --- User Account Related RPCs ---
+
+// Check if a username exists.
+message CheckUsernameRequest {
+  string username = 1;
+}
+message CheckUsernameResponse {
+  Status status = 1;
+}
+
+// Check a user's password.
+message CheckPasswordRequest {
+  string username = 1;
+  string password = 2;
+}
+message CheckPasswordResponse {
+  Status status = 1;
+}
+
+// Create a new user.
+message CreateUserRequest {
+  string username = 1;
+  string password = 2;
+}
+message CreateUserResponse {
+  Status status = 1;
+}
+
+// Confirm login (and mark user as online).
+message ConfirmLoginRequest {
+  string username = 1;
+}
+message ConfirmLoginResponse {
+  Status status = 1;
+}
+
+// Confirm logout (and mark user as offline).
+message ConfirmLogoutRequest {
+  string username = 1;
+}
+message ConfirmLogoutResponse {
+  Status status = 1;
+}
+
+// Get the list of currently online users.
+message GetOnlineUsersRequest {}
+message GetOnlineUsersResponse {
+  Status status = 1;
+  repeated string users = 2;
+}
+
+// Get all registered users.
+message GetUsersRequest {}
+message GetUsersResponse {
+  Status status = 1;
+  repeated string users = 2;
+}
+
+// --- Messaging RPCs ---
+
+// Message object (adapted from your MessageObject).
+message MessageObject {
+  int64 id = 1;
+  string sender = 2;
+  string recipient = 3;
+  string time_sent = 4;
+  bool read = 5;
+  string subject = 6;
+  string body = 7;
+}
+
+// Send a message.
+message SendMessageRequest {
+  MessageObject message = 1;
+}
+message SendMessageResponse {
+  Status status = 1;
+}
+
+// Retrieve a specific message.
+message GetMessageRequest {
+  int64 offset = 1;
+  int64 limit = 2;
+  bool unread_only = 3;
+  string username = 4;
+}
+message GetMessageResponse {
+  Status status = 1;
+  repeated MessageObject message = 2;
+}
+
+// Confirm that a message has been read.
+message ConfirmReadRequest {
+  int64 message_id = 1;
+  string username = 2;
+}
+message ConfirmReadResponse {
+  Status status = 1;
+}
+
+// Delete a specific message.
+message DeleteMessageRequest {
+  repeated int64 message_id = 1;
+}
+message DeleteMessageResponse {
+  Status status = 1;
+}
+
+// Delete a user account.
+message DeleteUserRequest {
+  string username = 1;
+}
+message DeleteUserResponse {
+  Status status = 1;
+}
+
+// --- Alert Notifications (for asynchronous alerts) ---
+
+// Client subscribes for alert notifications.
+message SubscribeAlertsRequest {
+  string username = 1;
+}
+// Alert notification message.
+message AlertNotification {
+  MessageObject message = 1;
+}
+
+// --- Service Definition ---
+
+service ChatService {
+  // User account management.
+  rpc CheckUsername(CheckUsernameRequest) returns (CheckUsernameResponse);
+  rpc CheckPassword(CheckPasswordRequest) returns (CheckPasswordResponse);
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  rpc ConfirmLogin(ConfirmLoginRequest) returns (ConfirmLoginResponse);
+  rpc ConfirmLogout(ConfirmLogoutRequest) returns (ConfirmLogoutResponse);
+  rpc GetOnlineUsers(GetOnlineUsersRequest) returns (GetOnlineUsersResponse);
+  rpc GetUsers(GetUsersRequest) returns (GetUsersResponse);
+
+  // Messaging.
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  rpc GetMessage(GetMessageRequest) returns (GetMessageResponse);
+  rpc ConfirmRead(ConfirmReadRequest) returns (ConfirmReadResponse);
+  rpc DeleteMessage(DeleteMessageRequest) returns (DeleteMessageResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+
+  // Streaming RPC for asynchronous alerts.
+  rpc SubscribeAlerts(SubscribeAlertsRequest) returns (stream AlertNotification);
+}
