@@ -67,7 +67,9 @@ message GetOnlineUsersResponse {
 }
 
 // Get all registered users.
-message GetUsersRequest {}
+message GetUsersRequest {
+  string query = 1;
+}
 message GetUsersResponse {
   Status status = 1;
   repeated string users = 2;
