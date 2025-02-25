@@ -191,6 +191,7 @@ class UserClient:
         self.accounts_offset = 0
         self.unread_count = 0
         self.message_count = 0
+        self.curr_displayed_msgs = []
 
         self.window = tk.Tk()
         self.window.geometry("1500x500")
@@ -198,12 +199,10 @@ class UserClient:
         self.create_chat_ui()
         self.check_user_status()
         self.query_accounts()
-        
-        # Start alert subscription in a separate thread
-        threading.Thread(target=self.subscribe_alerts, daemon=True).start()
 
         self.window.protocol("WM_DELETE_WINDOW", self.close_connection)
         self.window.mainloop()
+        self.check_incoming_messages()
     
     def create_chat_ui(self):        
         """Generate Tkinter Widgets for GUI"""
@@ -292,6 +291,7 @@ class UserClient:
             messagebox.showinfo("Sucess", "Logged In")
             self.unread_count = response.num_unread_msgs
             self.message_count = response.num_total_msgs
+            self.message_count_label.config(text=f"You have {self.message_count} messages ({self.unread_count} unread). How many messages would you like to see?")
         elif response.status == chat_pb2.MATCH:
             messagebox.showerror("Error", "Already Logged In Elsewhere")
             self.window.destroy()
@@ -306,6 +306,8 @@ class UserClient:
     def query_accounts(self):
         """Queries server user process for list of accounts matching wildcard pattern"""
         query = self.accounts_searchbar.get().strip()
+        if not query:
+            query = r"%"
 
         try:
             response = self.stub.GetUsers(chat_pb2.GetUsersRequest(query=query))
@@ -365,42 +367,60 @@ class UserClient:
             self.accounts_back_button.config(state=tk.NORMAL)
         self.display_accounts()
 
-    def query_messages(self, incoming_message=False):
+    def query_messages(self, active=True):
         """Queries server for all of user's messages"""
-        for item in self.chat_area.get_children():
-            self.chat_area.delete(item)
 
         limit = self.message_count_entry.get().strip()
 
-        if incoming_message:
+        if active:
+            # If no valid number is provided or the value is less than 1, default to 1.
             if not limit or not limit.isdigit() or int(limit) < 1:
                 limit = 1
+            elif int(limit) > self.message_count:
+                limit = self.message_count
             else:
-                limit = int(limit) + 1
-            # visually update (increment) numbers with incoming message
-            self.message_count_entry.delete(0, tk.END)
-            self.message_count_entry.insert(0, limit)
-            self.message_count_label.config(text=f"You have {self.message_count} messages ({self.unread_count} unread). How many messages would you like to see?")
+                limit = int(limit)
+            # if we changed the number of messages to be displayed
+            if limit != len(self.curr_displayed_msgs):
+                try:
+                    response = self.stub.GetMessage(chat_pb2.GetMessageRequest(
+                        offset=0, limit=-1, unread_only=False, username=self.username
+                    ))
+                except grpc.RpcError as e:
+                    messagebox.showerror("gRPC Error", str(e))
+                    return
+                if response.status == chat_pb2.SUCCESS:
+                    # visually update limit
+                    self.message_count_entry.delete(0, tk.END)
+                    self.message_count_entry.insert(0, limit)
+                    num_new_messages = len(response.messages) - self.message_count
+                    self.unread_count += num_new_messages
+                    self.message_count = len(response.messages)
+                    self.message_count_label.config(text=f"You have {self.message_count} messages ({self.unread_count} unread). How many messages would you like to see?")
+                    self.display_messages(response.messages[-limit:])
+                else:
+                    messagebox.showerror("Error", "Error fetching messages")
+                    return
         else:
-            if self.message_count == 0:
-                messagebox.showwarning("Input Error", f"Sorry! You have no messages to display...")
+            # Fetch all messages
+            try:
+                response = self.stub.GetMessage(chat_pb2.GetMessageRequest(
+                    offset=0, limit=-1, unread_only =False, username=self.username
+                ))
+            except grpc.RpcError as e:
+                messagebox.showerror("gRPC Error", str(e))
                 return
-            elif not limit or not limit.isdigit() or int(limit) < 0:
-                messagebox.showwarning("Input Error", f"Must be a number greater than or equal to 0!")
+            if response.status == chat_pb2.SUCCESS:
+                num_new_messages = len(response.messages) - self.message_count
+                if num_new_messages == 0:
+                    return
+                # update unread_count and total count and increment limit (and ui)
+                self.unread_count += num_new_messages
+                self.message_count = len(response.messages)
+                self.message_count_label.config(text=f"You have {self.message_count} messages ({self.unread_count} unread). How many messages would you like to see?")
+            else:
+                messagebox.showerror("Error", "Error fetching messages")
                 return
-
-        try:
-            response = self.stub.GetMessage(chat_pb2.GetMessageRequest(
-                offset=0, limit=limit, unread_only =False, username=self.username
-            ))
-        except grpc.RpcError as e:
-            messagebox.showerror("gRPC Error", str(e))
-            return
-        
-        if response.status == chat_pb2.SUCCESS:
-            self.display_messages(response.messages)
-        else:
-            messagebox.showerror("Error", "Error fetching messages")
             
     def display_messages(self, messages):
         """Displays user messages upon receipt"""
@@ -411,6 +431,8 @@ class UserClient:
             formatted_datetime = f"{formatted_datetime:>15}"  
             formatted_datetime += " (*)" if not msg.read else "    "  # 4 spaces to match (*)
             self.chat_area.insert("", "end", values=(msg.id, formatted_datetime, msg.sender, msg.subject, msg.body))
+
+        self.curr_displayed_msgs = messages
 
     def open_message(self, event):
         """Open up a popup to view a message"""
@@ -443,6 +465,7 @@ class UserClient:
                     message_id=int(message_id), username=self.username
                 ))
                 if response.status == chat_pb2.SUCCESS:
+                    self.unread_count -= 1
                     self.query_messages()
             except grpc.RpcError as e:
                 messagebox.showerror("gRPC Error", str(e))
@@ -465,6 +488,7 @@ class UserClient:
             id=0,
             sender=self.username,
             recipient=recipient,
+            time_sent=current_time,
             read=False,
             subject=subject,
             body=body
@@ -566,24 +590,21 @@ class UserClient:
         else:
             messagebox.showerror("Error", "Account deletion failed")
 
-    def subscribe_alerts(self):
-        """Runs in a background thread to listen for live alerts."""
-        try:
-            alert_stream = self.stub.SubscribeAlerts(chat_pb2.SubscribeAlertsRequest(username=self.username))
-            for alert in alert_stream:
-                # When an alert is received, schedule a callback in the main thread
-                self.window.after(0, self.handle_alert, alert)
-        except grpc.RpcError as e:
-            print("Alert subscription error:", e)
-
-    def handle_alert(self, alert):
-        """Handle an incoming alert (update unread count and refresh messages)"""
-        self.message_count += 1
-        self.unread_count += 1
-        self.query_messages(incoming_message=True) # update app
+    def check_incoming_messages(self):
+        self.query_messages(active=False)
+        # Schedule check_incoming_messages to run again after 500 milliseconds
+        self.window.after(500, self.check_incoming_messages)
 
     def close_connection(self):
-        self.window.destroy()
+        try:
+            response = self.stub.ConfirmLogout(chat_pb2.ConfirmLogoutRequest(username=self.username))
+        except grpc.RpcError as e:
+            messagebox.showerror("gRPC Error", str(e))
+            return
+        if response.status == chat_pb2.SUCCESS:
+            self.window.destroy()
+        else:
+            messagebox.showerror("Error", "Logout failed")
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
