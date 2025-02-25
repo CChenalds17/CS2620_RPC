@@ -1,4 +1,4 @@
-# CS2620 Design Project 1: Wire Protocols
+# CS2620 Design Project 2: RPC
 
 The documentation for this project is located in *Documentation/Documentation.md*
 
