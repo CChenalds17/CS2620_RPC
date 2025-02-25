@@ -340,6 +340,9 @@ class UserClient:
 
     def check_user_status(self):
         """Verifies this user is not currently logged in on another machine. Runs immediately upon login."""
+        # Send a message to the database, confirming Login
+        request = DataObject(request=Request.CONFIRM_LOGIN, user=self.username)
+        self.server_socket.sendall(request.serialize())
         data_buffer = b""
         received = False
         while not received:

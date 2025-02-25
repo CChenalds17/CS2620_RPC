@@ -47,6 +47,9 @@ def database_request_handler(db : DatabaseManager,
             target_key.data.outbound.put(request.serialize())
             request.update(request=Request.SEND_MESSAGE, status=Status.SUCCESS)
     
+    elif request.request == Request.CONFIRM_LOGOUT:
+        request.update(status=Status.SUCCESS)
+    
     # All other requests can go directly to the DatabaseManager's handler
     else:
         request = db.handler(request)
