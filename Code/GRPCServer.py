@@ -149,7 +149,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             read = bool(tuple[4]),
             subject = tuple[5],
             body = tuple[6]))
-        return chat_pb2.GetMessageResponse(status=chat_pb2.Status.SUCCESS, message=messages)
+        return chat_pb2.GetMessageResponse(status=chat_pb2.Status.SUCCESS, messages=messages)
 
     def ConfirmRead(self, request, context):
         if not request.username or not request.message_id:
