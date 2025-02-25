@@ -1,218 +1,250 @@
-import socket
 import sys
-import selectors
-from datetime import datetime, timezone
+import grpc
 import hashlib
+from datetime import datetime, timezone
 
-from Modules.Flags import Request, Status
-from Modules.DataObjects import DataObject, MessageObject
-from Modules.SelectorData import SelectorData
+# Import the generated gRPC modules.
+import chat_pb2
+import chat_pb2_grpc
 
-# run python client.py HOSTNAME PORTNAME
-
-def client_user(server_socket, username):
-    # Send a message to the database, confirming Login
+def client_user(stub, username):
+    # Confirm login via gRPC.
     try:
-        request = DataObject(request=Request.CONFIRM_LOGIN, user=username)
-        server_socket.sendall(request.serialize())
-    except Exception as e:
-        print(f"Error in Client when sending Login to database:", e)
-        server_socket.close()
+        login_response = stub.ConfirmLogin(chat_pb2.ConfirmLoginRequest(username=username))
+    except grpc.RpcError as e:
+        print("Error during ConfirmLogin:", e)
         return
-    data_buffer = b""
-    logged_in = False
-    while not logged_in:
-        data = server_socket.recv(1024)
-        if not data:
-            print("Connection closed by the server.")
-            return
-        data_buffer += data
-        serial, data_buffer = DataObject.get_one(data_buffer)
-        if serial != b"":
-            logged_in = True
-            response = DataObject(method="serial", serial=serial)
-            print(f"{response.to_string()}")
-            if response.request != Request.CONFIRM_LOGIN:
-                print("Unexpected Communication, Login Failed")
-                return
-            if response.status == Status.SUCCESS:
-                print("Logged In")
-            elif response.status == Status.MATCH:
-                print("Already Logged In Elsewhere")
-                return
-            else:
-                print("Login Failed")
-                return
-    
-    # Use selectors to allow for polling instead of blocking
-    client_selector = selectors.DefaultSelector()
-    client_selector.register(server_socket, selectors.EVENT_READ, data=SelectorData("User"))
-    server_socket.setblocking(False)
 
-    while logged_in:
-        # Send user input to database
+    if login_response.status == chat_pb2.Status.SUCCESS:
+        print("Logged In")
+        print(f"Unread messages: {login_response.num_unread_msgs}, Total messages: {login_response.num_total_msgs}")
+    elif login_response.status == chat_pb2.Status.MATCH:
+        print("Already Logged In Elsewhere")
+        return
+    else:
+        print("Login Failed")
+        return
+
+    # Main interactive loop.
+    while True:
         command = input(f"Enter a message as User {username}: ")
         if command == "exit":
             break
         lines = command.split()
-        request = DataObject(user=username)
+        if not lines:
+            continue
+
         if lines[0] == "get":
-            request.update(request=Request.GET_ONLINE_USERS)
-        if lines[0] == "msg":
-            request.update(request=Request.GET_MESSAGE, datalen=3, data=[lines[1], lines[2], lines[3]])
-            # start index, # messages, read/unread
+            # Get online users.
+            try:
+                response = stub.GetOnlineUsers(chat_pb2.GetOnlineUsersRequest())
+                if response.status == chat_pb2.Status.SUCCESS:
+                    print("Online users:", response.users)
+                else:
+                    print("Failed to get online users.")
+            except grpc.RpcError as e:
+                print("RPC error:", e)
+
+        elif lines[0] == "msg":
+            # Expected usage: msg <offset> <limit> <unread_only>
+            if len(lines) < 4:
+                print("Usage: msg <offset> <limit> <unread_only>")
+                continue
+            try:
+                offset = int(lines[1])
+                limit = int(lines[2])
+                unread_only = (lines[3].lower() == "true")
+                response = stub.GetMessage(chat_pb2.GetMessageRequest(
+                    offset=offset,
+                    limit=limit,
+                    unread_only=unread_only,
+                    username=username))
+                if response.status == chat_pb2.Status.SUCCESS:
+                    for msg in response.messages:
+                        print(f"Message {msg.id} from {msg.sender} at {msg.time_sent}:\n {msg.subject}\n {msg.body}\n (Read: {msg.read})")
+                else:
+                    print("Failed to get messages.")
+            except Exception as e:
+                print("Error processing msg command:", e)
+
         elif lines[0] == "users":
-            request.update(request=Request.GET_USERS, datalen=1, data = ["All"])
+            # Get all registered users.
+            try:
+                response = stub.GetUsers(chat_pb2.GetUsersRequest(query="All"))
+                if response.status == chat_pb2.Status.SUCCESS:
+                    print("Registered users:", response.users)
+                else:
+                    print("Failed to get users.")
+            except grpc.RpcError as e:
+                print("RPC error:", e)
+
         elif lines[0] == "like":
-            request.update(request=Request.GET_USERS, datalen=2, data = ["Like", lines[1]])
+            # Get users matching a pattern.
+            if len(lines) < 2:
+                print("Usage: like <pattern>")
+                continue
+            pattern = f"%{lines[1]}%"
+            try:
+                response = stub.GetUsers(chat_pb2.GetUsersRequest(query=pattern))
+                if response.status == chat_pb2.Status.SUCCESS:
+                    print("Users matching pattern:", response.users)
+                else:
+                    print("Failed to get users with pattern.")
+            except grpc.RpcError as e:
+                print("RPC error:", e)
+
         elif lines[0] == "delete":
-            request.update(request=Request.DELETE_USER)
+            # Delete the current user.
+            try:
+                response = stub.DeleteUser(chat_pb2.DeleteUserRequest(username=username))
+                if response.status == chat_pb2.Status.SUCCESS:
+                    print("User deleted successfully.")
+                    return
+                else:
+                    print("Failed to delete user.")
+            except grpc.RpcError as e:
+                print("RPC error:", e)
+
         elif lines[0] == "logout":
-            request.update(request=Request.CONFIRM_LOGOUT)
-            logged_in = False
+            # Logout.
+            try:
+                response = stub.ConfirmLogout(chat_pb2.ConfirmLogoutRequest(username=username))
+                if response.status == chat_pb2.Status.SUCCESS:
+                    print("Logged out successfully.")
+                    return
+                else:
+                    print("Logout failed.")
+            except grpc.RpcError as e:
+                print("RPC error:", e)
+                return
+
         elif lines[0] == "read":
-            request.update(request=Request.CONFIRM_READ, datalen=len(lines[1:]), data=lines[1:])
+            # Mark a message as read. (Expecting a single message_id.)
+            if len(lines) < 2:
+                print("Usage: read <message_id>")
+                continue
+            try:
+                message_id = int(lines[1])
+                response = stub.ConfirmRead(chat_pb2.ConfirmReadRequest(
+                    message_id=message_id,
+                    username=username))
+                if response.status == chat_pb2.Status.SUCCESS:
+                    print(f"Message {message_id} marked as read.")
+                else:
+                    print("Failed to mark message as read.")
+            except grpc.RpcError as e:
+                print("RPC error:", e)
+
         elif lines[0] == "deletemsg":
-            request.update(request=Request.DELETE_MESSAGE, datalen=len(lines[1:]), data=lines[1:])
+            # Delete one or more messages by id.
+            if len(lines) < 2:
+                print("Usage: deletemsg <message_id1> [<message_id2> ...]")
+                continue
+            try:
+                message_ids = [int(x) for x in lines[1:]]
+                response = stub.DeleteMessage(chat_pb2.DeleteMessageRequest(message_id=message_ids))
+                if response.status == chat_pb2.Status.SUCCESS:
+                    print("Message(s) deleted successfully.")
+                else:
+                    print("Failed to delete messages.")
+            except grpc.RpcError as e:
+                print("RPC error:", e)
+
         elif lines[0] == "message":
+            # Compose and send a new message.
             recipient = input("Send Message To: ")
             subject = input("Enter Message Subject: ")
             body = input("Enter Message Body: ")
             current_time = datetime.now(timezone.utc)
             iso_time = current_time.isoformat(timespec='seconds')
-            message = MessageObject(sender=username, recipient=recipient, time=iso_time, subject=subject, body=body)
-            message_string = message.serialize().decode("utf-8")
-            print(message.to_string())
-            request.update(request=Request.SEND_MESSAGE, datalen=1, data=[message_string])
+            # Build a MessageObject for the RPC.
+            message_obj = chat_pb2.MessageObject(
+                id=0,
+                sender=username,
+                recipient=recipient,
+                time_sent=iso_time,
+                read=False,
+                subject=subject,
+                body=body
+            )
+            try:
+                response = stub.SendMessage(chat_pb2.SendMessageRequest(message=message_obj))
+                if response.status == chat_pb2.Status.SUCCESS:
+                    print("Message sent successfully.")
+                else:
+                    print("Failed to send message.")
+            except grpc.RpcError as e:
+                print("RPC error:", e)
+
         else:
-            request.update(request=Request.ALERT_MESSAGE, datalen=1, data=[command])
-        
-        print(f"Sending {request.to_string()}")
+            print("Unknown command.")
 
-        server_socket.sendall(request.serialize())
-
-        # Get response(s)
-        events = client_selector.select(timeout=None)
-        for key, mask in events:
-            if mask & selectors.EVENT_READ:
-                data = key.fileobj.recv(1024)
-                if not data:
-                    print("Connection closed by the server.")
-                    return
-                key.data.inbound += data
-                serial, key.data.inbound = DataObject.get_one(key.data.inbound)
-                while serial != b"":
-                    response = DataObject(method="serial", serial=serial)
-                    if response.request in [Request.DELETE_USER, Request.CONFIRM_LOGOUT] :
-                        return
-                    print(response.to_string()) 
-                    serial, key.data.inbound = DataObject.get_one(key.data.inbound)
-                    
-
-def client_create_user(server_socket):
-    username = ""
+def client_create_user(stub):
     while True:
         print("Create New User:")
         username = input("Enter Username: ")
         password = input("Enter Password: ")
         confirm_password = input("Confirm Password: ")
-        if password == confirm_password:
-            hashed_password = hashlib.sha256(password.encode()).hexdigest()
-            request = DataObject(request=Request.CREATE_USER, datalen=2, data=[username, hashed_password])
-            server_socket.sendall(request.serialize())
-        else:
+        if password != confirm_password:
+            print("Passwords do not match. Try again.")
             continue
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        try:
+            response = stub.CreateUser(chat_pb2.CreateUserRequest(username=username, password=hashed_password))
+            if response.status == chat_pb2.Status.SUCCESS:
+                print(f"Created User with Username: {username}")
+                return username
+            elif response.status == chat_pb2.Status.MATCH:
+                print("User already exists.")
+                return username
+            else:
+                print("Error creating user.")
+        except grpc.RpcError as e:
+            print("RPC error:", e)
 
-        recieved = False
-        data_buffer = b""
-        while not recieved:
-            data = server_socket.recv(1024)
-            if not data:
-                print("Connection closed by the server.")
-                return
-            data_buffer += data
-            serial, data_buffer = DataObject.get_one(data_buffer)
-            if serial != b"":
-                recieved = True
-                response = DataObject(method="serial", serial=serial)
-                if response.status == Status.SUCCESS:
-                    print(f"Created User with Username: {username}, Password: {password}")
-                    return
-                elif response.status == Status.MATCH:
-                    print("User Exists.")
-                    return
-                else:
-                    print("Error")
-
-def client_login(server_socket):
-    data_buffer = b""
-    username = ""
-    in_login = True
-    while in_login:
+def client_login(stub):
+    while True:
         print("Login:")
         username = input("Enter Username: ")
-        print(username)
-        request = DataObject(request=Request.CHECK_USERNAME, datalen=1, data=[username])
-        print(f"Sending: {request.to_string()}")
-        server_socket.sendall(request.serialize())
-        recieved = False
-        while not recieved:
-            data = server_socket.recv(1024)
-            if not data:
-                print("Connection closed by the server.")
-                return
-            data_buffer += data
-            serial, data_buffer = DataObject.get_one(data_buffer)
-            if serial != b"":
-                recieved = True
-                response = DataObject(method="serial", serial=serial)
-                # print(f"Recieved {response.to_string()}")
-                if response.status == Status.MATCH:
-                    in_login = False
-                elif response.status == Status.NO_MATCH:
-                    print("No such username exists")
-                    client_create_user(server_socket)
-                else:
-                    print("Error")
-    
-    password = ""
+        try:
+            response = stub.CheckUsername(chat_pb2.CheckUsernameRequest(username=username))
+            if response.status == chat_pb2.Status.MATCH:
+                break
+            elif response.status == chat_pb2.Status.NO_MATCH:
+                print("No such username exists. Creating new user.")
+                username = client_create_user(stub)
+                break
+            else:
+                print("Error checking username.")
+        except grpc.RpcError as e:
+            print("RPC error:", e)
+            return
+
     while True:
         password = input("Enter Password: ")
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
-        request = DataObject(request=Request.CHECK_PASSWORD, datalen = 2, data = [username, hashed_password])
-        server_socket.sendall(request.serialize())
-        recieved = False
-        while not recieved:
-            data = server_socket.recv(1024)
-            if not data:
-                print("Connection closed by the server.")
+        try:
+            response = stub.CheckPassword(chat_pb2.CheckPasswordRequest(username=username, password=hashed_password))
+            if response.status == chat_pb2.Status.MATCH:
+                print("Logging In")
+                client_user(stub, username)
                 return
-            data_buffer += data
-            serial, data_buffer = DataObject.get_one(data_buffer)
-            if serial != b"":
-                recieved = True
-                response = DataObject(method="serial", serial=serial)
-                if response.status == Status.MATCH:
-                    print("Logging In")
-                    client_user(server_socket, username)
-                    return
-                elif response.status == Status.NO_MATCH:
-                    print("Wrong Password")
-                else:
-                    print("Error")
+            elif response.status == chat_pb2.Status.NO_MATCH:
+                print("Wrong Password.")
+            else:
+                print("Error checking password.")
+        except grpc.RpcError as e:
+            print("RPC error:", e)
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("Usage: python client.py HOSTNAME PORTNAME")
+        print("Usage: python client.py HOSTNAME PORT")
         exit(1)
-    host, port = sys.argv[1], int(sys.argv[2])
-
+    host, port = sys.argv[1], sys.argv[2]
+    # Create a gRPC channel and stub.
+    channel = grpc.insecure_channel(f"{host}:{port}")
+    stub = chat_pb2_grpc.ChatServiceStub(channel)
+    
     while True:
-        # Connect to the server
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.connect((host, int(port)))
-
-        # Start the login process
-        client_login(server_socket)
-
-        server_socket.close()
+        client_login(stub)
+        # After logout or deletion, you might want to allow another login.

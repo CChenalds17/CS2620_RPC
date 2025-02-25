@@ -16,12 +16,12 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
     def __init__(self):
         self.online_username = {}
 
-        self.passwords = sqlite3.connect(PASSWORD_DATABASE)
+        self.passwords = sqlite3.connect(PASSWORD_DATABASE, check_same_thread=False)
         self.passwords_cursor = self.passwords.cursor()
         self.passwords_cursor.execute(f"CREATE TABLE IF NOT EXISTS {PASSWORD_DATABASE_SCHEMA}")
         self.passwords.commit()
 
-        self.messages = sqlite3.connect(MESSAGES_DATABASE)
+        self.messages = sqlite3.connect(MESSAGES_DATABASE, check_same_thread=False)
         self.messages_cursor = self.messages.cursor()
         self.messages_cursor.execute(f"CREATE TABLE IF NOT EXISTS {MESSAGES_DATABASE_SCHEMA}")
         self.messages.commit()
@@ -42,6 +42,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
     # User Account Management
     
     def CheckUsername(self, request, context):
+        print(f"Checking Username given {request}")
         if not request.username:
             return chat_pb2.CheckUsernameResponse(status=chat_pb2.Status.ERROR)
         self.passwords_cursor.execute("SELECT Username FROM Passwords WHERE Username = ?", (request.username,))
@@ -50,14 +51,17 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         return chat_pb2.CheckUsernameResponse(status=status)
 
     def CheckPassword(self, request, context):
+        print(f"Checking Password given {request}")
         if not request.username or not request.password:
             return chat_pb2.CheckPasswordResponse(status=chat_pb2.Status.ERROR)
         self.passwords_cursor.execute("SELECT Password FROM Passwords WHERE Username = ?", (request.username,))
         result = self.passwords_cursor.fetchone()
-        status = chat_pb2.Status.MATCH if (result == request.password) else chat_pb2.Status.NO_MATCH
+        print(f"Got: {result}")
+        status = chat_pb2.Status.MATCH if (str(result[0]) == str(request.password)) else chat_pb2.Status.NO_MATCH
         return chat_pb2.CheckPasswordResponse(status=status)
 
     def CreateUser(self, request, context):
+        print(f"Creating user given {request}")
         if not request.username or not request.password:
             return chat_pb2.CreateUserResponse(status=chat_pb2.Status.ERROR)
         try:
@@ -68,6 +72,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             return chat_pb2.CreateUserResponse(status=chat_pb2.Status.MATCH)
 
     def ConfirmLogin(self, request, context):
+        print(f"Confirming Login given {request}")
         if not request.username:
             return chat_pb2.ConfirmLoginResponse(
             status=chat_pb2.Status.ERROR, 
@@ -80,6 +85,14 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             num_total_msgs=0)
         else:
             self.online_username[request.username] = queue.Queue()
+
+            def unregister():
+                print(f"Unregistering user {request.username} due to unexpected termination.")
+                self.online_username.pop(request.username, None)
+
+            # Register the callback on the RPC context.
+            context.add_callback(unregister)
+
             self.messages_cursor.execute(
             "SELECT COUNT(*) FROM Messages WHERE Recipient = ? AND Read = 0;", (request.username,))
             unread = self.messages_cursor.fetchone()[0]
@@ -93,14 +106,17 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             )
 
     def ConfirmLogout(self, request, context):
+        print(f"Confirming Logout given {request}")
         if request.username in self.online_username:
             del self.online_username[request.username]
         return chat_pb2.ConfirmLogoutResponse(status=chat_pb2.Status.SUCCESS)
 
     def GetOnlineUsers(self, request, context):
+        print(f"Getting Online Users")
         return chat_pb2.GetOnlineUsersResponse(status=chat_pb2.Status.SUCCESS, users=list(self.online_username.keys()))
 
     def GetUsers(self, request, context):
+        print(f"Getting Users given {request}")
         self.passwords_cursor.execute("SELECT Username FROM Passwords WHERE Username Like ?", (request.query, ))
         result = self.passwords_cursor.fetchall()
         final_result = [username[0] for username in result]
@@ -109,6 +125,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
     # Messages
 
     def SendMessage(self, request, context):
+        print(f"Sending Message given {request}")
         self.passwords_cursor.execute("SELECT Username FROM Passwords WHERE Username = ?", (request.message.recipient,))
         result = self.passwords_cursor.fetchall()
         if not result:
@@ -128,6 +145,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             return chat_pb2.SendMessageResponse(status=chat_pb2.Status.ERROR)
 
     def GetMessage(self, request, context):
+        print(f"Getting Message given {request}")
         if request.unread_only:
             self.messages_cursor.execute(
                 "SELECT * FROM Messages WHERE Recipient = ? AND Read = 0 ORDER BY Time_sent DESC LIMIT ? OFFSET ?;",
@@ -152,13 +170,15 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         return chat_pb2.GetMessageResponse(status=chat_pb2.Status.SUCCESS, messages=messages)
 
     def ConfirmRead(self, request, context):
+        print(f"Confirming Read given {request}")
         if not request.username or not request.message_id:
             return chat_pb2.ConfirmReadResponse(status=chat_pb2.Status.ERROR)
-        self.messages_cursor.execute(f"UPDATE Messages SET Read = 1 WHERE Recipient = ? AND Id = ?", request.username, request.message_id)
+        self.messages_cursor.execute(f"UPDATE Messages SET Read = 1 WHERE Recipient = ? AND Id = ?", (request.username, request.message_id,))
         self.messages.commit()
         return chat_pb2.ConfirmReadResponse(status=chat_pb2.Status.SUCCESS)
 
     def DeleteMessage(self, request, context):
+        print(f"Deleting Message given {request}")
         if len(request.message_id) == 0:
             return chat_pb2.DeleteMessageResponse(status=chat_pb2.Status.ERROR)
         format = ','.join('?' for _ in request.message_id)
@@ -170,6 +190,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         return chat_pb2.DeleteMessageResponse(status=chat_pb2.Status.SUCCESS)
 
     def DeleteUser(self, request, context):
+        print(f"Deleting User given {request}")
         if not request.username:
             return chat_pb2.DeleteUserResponse(status=chat_pb2.Status.ERROR)
         self.messages_cursor.execute("UPDATE Messages SET Recipient = Sender, Subject = 'NOT SENT ' || Subject WHERE Recipient = ? AND Read = 0;", (request.username,))
@@ -182,6 +203,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         return chat_pb2.DeleteUserResponse(status=chat_pb2.Status.SUCCESS)
 
     def SubscribeAlerts(self, request, context):
+        print(f"Sending Alert given {request}")
         alert_queue = self.online_username[request.message.recipient]
         while True:
             try:
