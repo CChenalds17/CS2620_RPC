@@ -73,7 +73,7 @@ def client_user(server_socket, username):
         elif lines[0] == "read":
             request.update(request=Request.CONFIRM_READ, datalen=len(lines[1:]), data=lines[1:])
         elif lines[0] == "deletemsg":
-            request.update(request=Request.DELETE_MESSAGE, datalen=1, data=[lines[1]])
+            request.update(request=Request.DELETE_MESSAGE, datalen=len(lines[1:]), data=lines[1:])
         elif lines[0] == "message":
             recipient = input("Send Message To: ")
             subject = input("Enter Message Subject: ")

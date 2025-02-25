@@ -99,10 +99,14 @@ class DatabaseManager:
         except sqlite3.IntegrityError:
             return (Status.ERROR, 0)
     
-    def delete_message(self, id : int) -> Status:
-        self.messages_cursor.execute("DELETE FROM Messages WHERE Id = ?", (id,))
-        if self.messages_cursor.rowcount == 0:
-            return Status.NO_MATCH
+    def delete_message(self, ids: list[str]) -> Status:
+        if len(ids) == 0:
+            return Status.ERROR
+        format = ','.join('?' for _ in ids)
+        values = []
+        for id in ids:
+            values.append(int(id))
+        self.messages_cursor.execute(f"DELETE FROM Messages WHERE Id IN ({format})", values)
         self.messages.commit()
         return Status.SUCCESS
     
@@ -192,7 +196,7 @@ class DatabaseManager:
                         request.update(status=status, data=[message.serialize().decode("utf-8")])
                         print(request.to_string())
                 case Request.DELETE_MESSAGE:
-                    status = self.delete_message(int(request.data[0]))
+                    status = self.delete_message(request.data)
                     request.update(status=status)
                 case Request.GET_MESSAGE:
                     message_list = []
