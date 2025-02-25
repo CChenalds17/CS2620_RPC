@@ -194,18 +194,6 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         self.passwords.commit()
         return chat_pb2.DeleteUserResponse(status=chat_pb2.Status.SUCCESS)
 
-    def SubscribeAlerts(self, request, context):
-        print(f"Sending Alert given {request}")
-        alert_queue = self.online_username[request.username]
-        while True:
-            try:
-                alert = alert_queue.get(timeout=0.5)
-                print(f"sending alert: {alert}")
-                yield alert
-                print(f"sent alert: {alert}")
-            except queue.Empty:
-                break
-
 if __name__ == '__main__':
      # Confirm validity of commandline arguments
     if len(sys.argv) != 3:

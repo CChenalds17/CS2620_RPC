@@ -96,11 +96,6 @@ class ChatServiceStub(object):
                 request_serializer=chat__pb2.DeleteUserRequest.SerializeToString,
                 response_deserializer=chat__pb2.DeleteUserResponse.FromString,
                 _registered_method=True)
-        self.SubscribeAlerts = channel.unary_stream(
-                '/chat.ChatService/SubscribeAlerts',
-                request_serializer=chat__pb2.SubscribeAlertsRequest.SerializeToString,
-                response_deserializer=chat__pb2.AlertNotification.FromString,
-                _registered_method=True)
 
 
 class ChatServiceServicer(object):
@@ -182,13 +177,6 @@ class ChatServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SubscribeAlerts(self, request, context):
-        """Streaming RPC for asynchronous alerts.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
 
 def add_ChatServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -251,11 +239,6 @@ def add_ChatServiceServicer_to_server(servicer, server):
                     servicer.DeleteUser,
                     request_deserializer=chat__pb2.DeleteUserRequest.FromString,
                     response_serializer=chat__pb2.DeleteUserResponse.SerializeToString,
-            ),
-            'SubscribeAlerts': grpc.unary_stream_rpc_method_handler(
-                    servicer.SubscribeAlerts,
-                    request_deserializer=chat__pb2.SubscribeAlertsRequest.FromString,
-                    response_serializer=chat__pb2.AlertNotification.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -584,33 +567,6 @@ class ChatService(object):
             '/chat.ChatService/DeleteUser',
             chat__pb2.DeleteUserRequest.SerializeToString,
             chat__pb2.DeleteUserResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def SubscribeAlerts(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_stream(
-            request,
-            target,
-            '/chat.ChatService/SubscribeAlerts',
-            chat__pb2.SubscribeAlertsRequest.SerializeToString,
-            chat__pb2.AlertNotification.FromString,
             options,
             channel_credentials,
             insecure,

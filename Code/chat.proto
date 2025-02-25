@@ -135,17 +135,6 @@ message DeleteUserResponse {
   Status status = 1;
 }
 
-// --- Alert Notifications (for asynchronous alerts) ---
-
-// Client subscribes for alert notifications.
-message SubscribeAlertsRequest {
-  string username = 1;
-}
-// Alert notification message.
-message AlertNotification {
-  MessageObject message = 1;
-}
-
 // --- Service Definition ---
 
 service ChatService {
@@ -164,7 +153,4 @@ service ChatService {
   rpc ConfirmRead(ConfirmReadRequest) returns (ConfirmReadResponse);
   rpc DeleteMessage(DeleteMessageRequest) returns (DeleteMessageResponse);
   rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
-
-  // Streaming RPC for asynchronous alerts.
-  rpc SubscribeAlerts(SubscribeAlertsRequest) returns (stream AlertNotification);
 }
