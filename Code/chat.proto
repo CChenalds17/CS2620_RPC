@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package chat;
 
+// Compile via python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. chat.proto 
+
 // --- Common Enums and Messages ---
 
 // Status values correspond to your custom Status flags.
@@ -105,7 +107,7 @@ message GetMessageRequest {
 }
 message GetMessageResponse {
   Status status = 1;
-  repeated MessageObject message = 2;
+  repeated MessageObject messages = 2;
 }
 
 // Confirm that a message has been read.
