@@ -1,5 +1,4 @@
 import time
-import sys
 from concurrent import futures
 import queue
 import sqlite3
@@ -85,13 +84,6 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             num_total_msgs=0)
         else:
             self.online_username[request.username] = queue.Queue()
-
-            def unregister():
-                print(f"Unregistering user {request.username} due to unexpected termination.")
-                self.online_username.pop(request.username, None)
-
-            # Register the callback on the RPC context.
-            context.add_callback(unregister)
 
             self.messages_cursor.execute(
             "SELECT COUNT(*) FROM Messages WHERE Recipient = ? AND Read = 0;", (request.username,))
@@ -204,16 +196,15 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
 
     def SubscribeAlerts(self, request, context):
         print(f"Sending Alert given {request}")
-        alert_queue = self.online_username[request.message.recipient]
+        alert_queue = self.online_username[request.username]
         while True:
             try:
                 alert = alert_queue.get(timeout=0.5)
+                print(f"sending alert: {alert}")
                 yield alert
+                print(f"sent alert: {alert}")
             except queue.Empty:
-                if context.is_active():
-                    continue
-                else:
-                    break
+                break
 
 if __name__ == '__main__':
      # Confirm validity of commandline arguments

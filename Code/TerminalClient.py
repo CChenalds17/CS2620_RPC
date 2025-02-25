@@ -83,9 +83,8 @@ def client_user(stub, username):
             if len(lines) < 2:
                 print("Usage: like <pattern>")
                 continue
-            pattern = f"%{lines[1]}%"
             try:
-                response = stub.GetUsers(chat_pb2.GetUsersRequest(query=pattern))
+                response = stub.GetUsers(chat_pb2.GetUsersRequest(query=lines[1]))
                 if response.status == chat_pb2.Status.SUCCESS:
                     print("Users matching pattern:", response.users)
                 else:
