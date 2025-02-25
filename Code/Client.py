@@ -572,7 +572,7 @@ class UserClient:
         for item in selected_items:
             values = self.chat_area.item(item, "values")
             message_id = values[0]
-            message_ids.append(message_id)
+            message_ids.append(str(message_id))
             num_messages += 1
             if "(*)" in values[1]:
                 num_unread += 1
@@ -602,18 +602,18 @@ class UserClient:
             self.message_count_label.config(text=f"You have {self.message_count} messages ({self.unread_count} unread). How many messages would you like to see?")
     
         # Send pending delete request for every message to server
-        for message_id in message_ids:
-            request_id = round(time.time() * 1000000)
-            request = DataObject(user=self.username, request=Request.DELETE_MESSAGE, datalen=1, data=[str(message_id)], sequence=request_id)
+        request_id = round(time.time() * 1000000)
+        request = DataObject(user=self.username, request=Request.DELETE_MESSAGE, datalen=len(message_ids), data=message_ids, sequence=request_id)
 
-            print(f"Sending: {request.to_string()}")
-            self.server_socket.sendall(request.serialize())
+        print(f"Sending: {request.to_string()}")
+        self.server_socket.sendall(request.serialize())
 
-            # Store pending confirmation event
-            self.pending_requests[request_id] = request.request
-            self.do_wait = True
+        # Store pending confirmation event
+        self.pending_requests[request_id] = request.request
+        self.do_wait = True
+        
+        self.window.after(100, self.wait_for_confirmation, request_id)
             
-            self.window.after(100, self.wait_for_confirmation, request_id)
 
     def logout(self):
         """Sends server request to log user out"""
