@@ -6,6 +6,7 @@ from tkinter import ttk
 from tkinter import messagebox
 import hashlib
 import threading
+import signal
 
 import grpc
 import chat_pb2, chat_pb2_grpc
@@ -196,13 +197,16 @@ class UserClient:
         self.window = tk.Tk()
         self.window.geometry("1500x500")
         self.window.title(f"{username}'s Chat")
+
+        signal.signal(signal.SIGINT, lambda sig, frame: self.close_connection())
+
         self.create_chat_ui()
         self.check_user_status()
         self.query_accounts()
 
         self.window.protocol("WM_DELETE_WINDOW", self.close_connection)
-        self.window.mainloop()
         self.check_incoming_messages()
+        self.window.mainloop()
     
     def create_chat_ui(self):        
         """Generate Tkinter Widgets for GUI"""
@@ -235,9 +239,9 @@ class UserClient:
         self.chat_area.heading("Sender", text="Sender", anchor="w")
         self.chat_area.heading("Subject", text="Subject", anchor="w")
         self.chat_area.column("ID", width=0, stretch=False)
-        self.chat_area.column("Time", width=125, stretch=False)
-        self.chat_area.column("Sender", width=175, anchor="w", stretch=False)
-        self.chat_area.column("Subject", width=350, anchor="w", stretch=False)
+        self.chat_area.column("Time", width=225, stretch=False)
+        self.chat_area.column("Sender", width=150, anchor="w", stretch=False)
+        self.chat_area.column("Subject", width=275, anchor="w", stretch=False)
         self.chat_area.column("Body", width=0, stretch=False)
 
         # Scrollbar for Chat Treeview
@@ -381,26 +385,25 @@ class UserClient:
             else:
                 limit = int(limit)
             # if we changed the number of messages to be displayed
-            if limit != len(self.curr_displayed_msgs):
-                try:
-                    response = self.stub.GetMessage(chat_pb2.GetMessageRequest(
-                        offset=0, limit=-1, unread_only=False, username=self.username
-                    ))
-                except grpc.RpcError as e:
-                    messagebox.showerror("gRPC Error", str(e))
-                    return
-                if response.status == chat_pb2.SUCCESS:
-                    # visually update limit
-                    self.message_count_entry.delete(0, tk.END)
-                    self.message_count_entry.insert(0, limit)
-                    num_new_messages = len(response.messages) - self.message_count
-                    self.unread_count += num_new_messages
-                    self.message_count = len(response.messages)
-                    self.message_count_label.config(text=f"You have {self.message_count} messages ({self.unread_count} unread). How many messages would you like to see?")
-                    self.display_messages(response.messages[-limit:])
-                else:
-                    messagebox.showerror("Error", "Error fetching messages")
-                    return
+            try:
+                response = self.stub.GetMessage(chat_pb2.GetMessageRequest(
+                    offset=0, limit=-1, unread_only=False, username=self.username
+                ))
+            except grpc.RpcError as e:
+                messagebox.showerror("gRPC Error", str(e))
+                return
+            if response.status == chat_pb2.SUCCESS:
+                # visually update limit
+                self.message_count_entry.delete(0, tk.END)
+                self.message_count_entry.insert(0, limit)
+                num_new_messages = len(response.messages) - self.message_count
+                self.unread_count += num_new_messages
+                self.message_count = len(response.messages)
+                self.message_count_label.config(text=f"You have {self.message_count} messages ({self.unread_count} unread). How many messages would you like to see?")
+                self.display_messages(response.messages[-limit:])
+            else:
+                messagebox.showerror("Error", "Error fetching messages")
+                return
         else:
             # Fetch all messages
             try:
@@ -409,6 +412,7 @@ class UserClient:
                 ))
             except grpc.RpcError as e:
                 messagebox.showerror("gRPC Error", str(e))
+                self.close_connection()
                 return
             if response.status == chat_pb2.SUCCESS:
                 num_new_messages = len(response.messages) - self.message_count
@@ -427,8 +431,8 @@ class UserClient:
         for item in self.chat_area.get_children():
             self.chat_area.delete(item)
         for msg in messages:
-            formatted_datetime = datetime.fromisoformat(msg.time_sent).strftime("%-m/%-d/%y %-H:%M")
-            formatted_datetime = f"{formatted_datetime:>15}"  
+            # formatted_datetime = datetime.fromisoformat(msg.time_sent).strftime("%-m/%-d/%y %-H:%M")
+            formatted_datetime = msg.time_sent
             formatted_datetime += " (*)" if not msg.read else "    "  # 4 spaces to match (*)
             self.chat_area.insert("", "end", values=(msg.id, formatted_datetime, msg.sender, msg.subject, msg.body))
 
@@ -600,6 +604,7 @@ class UserClient:
             response = self.stub.ConfirmLogout(chat_pb2.ConfirmLogoutRequest(username=self.username))
         except grpc.RpcError as e:
             messagebox.showerror("gRPC Error", str(e))
+            self.window.destroy()
             return
         if response.status == chat_pb2.SUCCESS:
             self.window.destroy()
