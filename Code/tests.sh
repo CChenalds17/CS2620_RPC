@@ -18,3 +18,9 @@ pytest tests.py
 
 # After tests finish, stop the GRPC server
 kill $SERVER_PID
+
+# Clear the databases by deleting them
+rm -f User_Data/messages.db
+rm -f User_Data/passwords.db
+touch User_Data/messages.db
+touch User_Data/passwords.db
