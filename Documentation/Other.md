@@ -15,7 +15,7 @@ In terms of benchmarking, we analyzed the size of the response object containing
 
 #### Size of Serialized response as a function of Message Size (Message count):
 <div style="display: flex; justify-content: space-around; align-items: center;">
-  <img src="../Code/Analytics/Plots/CHINESE_MESSAGE_MESSAGE_SIZE.png" alt="Serialize size as a function of Data Size for English Text" width=45%>
+  <img src="../Code/Analytics/Plots/ENGLISH_MESSAGE_MESSAGE_SIZE.png" alt="Serialize size as a function of Data Size for English Text" width=45%>
   <img src="../Code/Analytics/Plots/CHINESE_MESSAGE_MESSAGE_SIZE.png" alt="Serialize size as a function of Data Size for Chinese Text" width=45%>
 </div>
 
