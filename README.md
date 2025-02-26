@@ -2,7 +2,7 @@
 
 The Engineering Notebook for this project is located in *Documentation/engineering_notebook.md*
 
-Run the server with "python Server.py HOSTNAME DATABASE_PORT" in the Code directory
+Run the server with "python Server.py HOSTNAME SERVER_PORT" in the Code directory
 
 Run the client with "python Client.py HOSTNAME SERVER_PORT" in the Code directory
 
